@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Linq;
 
 
 namespace chuck_a_luck
@@ -9,42 +10,11 @@ namespace chuck_a_luck
     {
         static void Main(string[] args)
         {
-            new Game().Start();
-        }
-
-        public static void ExitProgram()
-        {
-            Console.ReadLine();
-            Environment.Exit(1);
-        }
-    }
-
-    class Game
-    {
-        private const int NumberThrows = 3;
-        private List<Player> players;
-        private Dice dice;
-        private IEnumerable<int> NumbersDice
-        {
-            get
-            {
-                for (int i = 0; i < NumberThrows; i++)
-                {
-                    yield return dice.Roll();
-                }
-            }
-        }
-
-        public Game()
-        {
-            dice = new Dice();
-        }
-
-        public void Start()
-        {
-            Intro();
-            EnterNames();
-            GameLoop();
+            var p = new Program();
+            p.Intro();
+            var players = p.AddPlayers();
+            p.StartMatch(players);
+            p.ExitProgram();
         }
 
         private void Intro()
@@ -52,189 +22,231 @@ namespace chuck_a_luck
             Console.WriteLine("**** Chuck-a-luck ****\nSie haben 1000 Geldeinheiten\nIn jeder Runde können Sie einen Teil davon auf eine der Zahlen 1 bis 6 setzen. Danach werden 3 Würfel geworfen. Falls Ihr Wert dabei ist, erhalten Sie Ihren Einsatz zurück und zusatzlich Ihren Einsatz fuer jeden Würfel,der die von Ihnen gesetzte Zahl zeigt.");
         }
 
-        private void EnterNames()
+        private void StartMatch(List<Player> players)
         {
-            players = new List<Player>();
-            string name;
-            int i = 0;
-            Player player;
+            var m = new Match(players, new Dice());
+            m.Start();
+        }
+
+        private List<Player> AddPlayers()
+        {
+            var players = new List<Player>();
+            int i = 1;
             while (true)
             {
-                i++;
                 Console.Write($"Name Player {i}: ");
-                name = Console.ReadLine();
+                var name = Console.ReadLine();
                 if (string.IsNullOrEmpty(name))
-                    return;
-                player = new Player(name);
-                Subscribe(player);
-                players.Add(player);
+                    return players;
+                players.Add(new Player(name));
+                i++;
             }
         }
 
-        private void GameLoop()
+        public void ExitProgram()
         {
-            while (true)
-            {
-                GetBets();               
-                CalcRound();
-            }
-        }
-
-        private void GetBets()
-        {
-            for (int i = players.Count - 1; i >= 0; i--)
-            {
-                players[i].StartRound();
-                players[i].InputBet();                
-                players[i].InputNumber();
-            }
-        }
-
-        private void CalcRound()
-        {
-            for (int i = players.Count - 1; i >= 0; i--)
-            {
-                players[i].CalcResult(NumbersDice);
-                players[i].OutputResult();
-                players[i].SaveRound();               
-            }
-        }
-       
-        private void GameOver()
-        {
-            Console.WriteLine("No Player left, leaving Game\n");
-            Program.ExitProgram();
-        }    
-
-        private void RemovePlayer(Player player)
-        {
-            players.Remove(player);           
-        }
-
-        public void Subscribe(Player player)
-        {
-            player.PlayerQuits += QuitsHandler;
-        }
-        private void QuitsHandler(Player player)
-        {
-            RemovePlayer(player);
-            if (players.Count == 0)
-            {
-                GameOver();
-            }
+            Console.ReadLine();
+            Environment.Exit(1);
         }
     }
 
     public class Player
     {
-        private string Name;
-        private int Money;
-        private int MoneyBegin;
-        private int Number;
-        private int Result;
-        private List<Round> RoundResults;
-        private int Bet;
-
-        public event PlayerQuitsHandler PlayerQuits;
-        public delegate void PlayerQuitsHandler(Player player);
-
-        public Player(string name)
+        public readonly string name;
+        public readonly List<RoundData> gameHistory = new List<RoundData>();
+        public int initialCredits, credits, stake, numberGuessed, correctGuess, result;
+        public bool Quit
         {
-            Name = name;
-            Money = 100;
-            RoundResults = new List<Round>();
+            get
+            {
+                if (stake == 0 || credits <= 0)
+                    return true;
+                else
+                    return false;
+            }
+        }
+
+        public Player(string name, int credits = 100)
+        {
+            this.name = name;
+            this.credits = initialCredits = credits;
         }
 
         public void SaveRound()
         {
-            RoundResults.Add(new Round(MoneyBegin, Money, Bet, Number, Result));
-        }      
 
-        public void OutputResult()
-        {
-            if (Result > 0)
-                Console.WriteLine($"Glückwunsch {Name}, Sie erhalten {Result} Geldeinheiten!!");
-            else
-                Console.WriteLine($"Pech {Name}, da war nichts für Sie dabei!!, sie verlieren {Bet} Geldeinheiten");
         }
 
-        public void StartRound()
+        public struct RoundData
         {
-            Console.WriteLine($"{Name}'s turn ! ");
-            Result = 0;
-            MoneyBegin = Money;
-            Console.WriteLine($"Sie haben {Money} Geldeinheiten");
+            public int CreditEnd, Result, NumberGuessed, Stake;
+
+            public RoundData(int creditEnd, int stake, int numberGuessed, int result)
+            {                
+                CreditEnd = creditEnd;
+                NumberGuessed = numberGuessed;
+                Result = result;
+                Stake = stake;
+            }
+        }
+    }
+
+    class Match
+    {
+        private readonly List<Player> allPlayers;
+        private List<Player> activePlayers;
+        Dice dice;
+
+        public Match(List<Player> allPlayers, Dice dice)
+        {
+            this.allPlayers = activePlayers = allPlayers;
+            this.dice = dice;
         }
 
-        public void InputBet()
+        public void Start()
+        {
+            while (activePlayers.Count > 0)
+            {
+                new Round(activePlayers, dice.Numbers).Start();
+                activePlayers = activePlayers.Where(p => p.Quit == false).ToList();
+            }
+            GameOver();
+        }
+
+        private void GameOver()
+        {
+            Console.WriteLine("No Player left, leaving Game\n");
+        }
+    }
+
+    class Round
+    {
+        private readonly List<Player> players;
+        private readonly List<int> numbers;
+
+        public Round(List<Player> players, List<int> numbers)
+        {
+            this.players = players;
+            this.numbers = numbers;
+        }
+
+        public void Start()
+        {
+            GetBets();
+            CalcResult(numbers);
+            OutputResult(numbers);
+            SaveRound();
+        }
+
+        private void GetBets()
+        {
+            foreach (var p in players)
+            {
+                PrintStatus(p);
+                InputStake(p);
+                if (p.Quit)
+                    continue;
+                InputGuessedNumber(p);
+            }           
+        }
+
+        public void PrintStatus(Player p)
+        {
+            Console.WriteLine($"{p.name}'s turn ! ");
+            Console.WriteLine($"Sie haben {p.credits} Geldeinheiten");
+        }
+
+        public void InputStake(Player p)
         {
             Console.Write("Ihr Einsatz: ");
-            string line = Console.ReadLine();
-            Bet = Int32.Parse(line);
-            if (Bet == 0)
+            var line = Console.ReadLine();
+            p.stake = Int32.Parse(line);
+            // Mit properties besser
+            if (p.stake == 0)
             {
-                Console.WriteLine($"{Name} verläßt das Casino mit {Money} Geldeinheiten!!");
-                PlayerQuits(this);
+                Console.WriteLine($"{p.name} verläßt das Casino mit {p.credits} Geldeinheiten!!");
             }
         }
 
-        public void CalcResult(IEnumerable<int> numbersDice)
-        {
-            StringBuilder sb = new StringBuilder("");
-            foreach (int numberDice in numbersDice)
-            {
-                sb.Append($" {numberDice}");
-                if (Number == numberDice) Result += Bet;
-            }
-            if (Result > 0)
-                Money += Result;
-            else
-                Money -= Bet;
-            Console.Write($"Die Würfel sind gefallen: ");
-            Console.WriteLine(sb.ToString());
-            if (Money == 0)
-            {
-                Console.WriteLine($"Sorry {Name}, sie haben kein Geld mehr und sind raus !!");
-                PlayerQuits(this);
-            }
-        }
-
-        public void InputNumber()
+        public void InputGuessedNumber(Player p)
         {
             Console.Write("Ihre Zahl: ");
             string line = Console.ReadLine();
-            Number = Int32.Parse(line);
+            p. = Int32.Parse(line);
         }
 
-        public struct Round
+        public void CalcResult(List<int> numbers)
         {
-            public int MoneyBegin, MoneyEnd, Number, Result, Bet;
-
-            public Round(int moneyBegin, int moneyEnd, int bet, int num, int result)
+            foreach (var number in numbers)
             {
-                MoneyBegin = moneyBegin;
-                MoneyEnd = moneyEnd;
-                Number = num;
-                Result = result;
-                Bet = bet;
+                foreach (var p in players)
+                {
+                    if (p.numberGuessed == number)
+                        p.correctGuess++;
+                }
+            }
+            foreach (var p in players)
+            {
+                if (p.correctGuess > 0)                
+                    p.result = p.correctGuess * p.stake; 
+                else
+                    p.result = -p.stake;
+
+                p.credits += p.result;
+
+                p.his.Add(new Round(MoneyBegin, Money, Bet, Number, Result));
+            }
+
+        }
+
+        public void OutputResult(List<int> numbers)
+        {
+            Console.Write($"Die Würfel sind gefallen: ");
+            Console.WriteLine(numbers.ToString());
+
+            foreach (var p in players)
+            {
+                if (p.credits == 0)
+                    Console.WriteLine($"Sorry {p.name}, sie haben kein Geld mehr und sind raus !!");
+
+                if (p.correctGuess > 0)
+                    Console.WriteLine($"Glückwunsch {p.name}, Sie erhalten {p.numberGuessed * p.stake} Geldeinheiten !!");
+                else
+                    Console.WriteLine($"Pech {p.name}, da war nichts für Sie dabei, sie verlieren {p.stake} Geldeinheiten !!");
             }
         }
+
+        public void SaveRound()
+        {
+            
+        }
+
+      
     }
 
     class Dice
     {
         private Random rnd;
+        private const int NumberThrows = 3;
         private const int Min = 0;
         private const int Max = 6;
 
         public Dice()
         {
             rnd = new Random();
-        }
+        }   
 
-        public int Roll()
+        public List<int> Numbers
         {
-            return rnd.Next(Min, Max);
+            get
+            {
+                List<int> numbers = new List<int>();
+                for (int i = 0; i < NumberThrows; i++)
+                {
+                    numbers.Add(rnd.Next(Min, Max));
+                }
+                return numbers;
+            }
         }
     }
 }
