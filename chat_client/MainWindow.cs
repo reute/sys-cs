@@ -111,7 +111,7 @@ namespace chat_client
             {
                 serverStream = clientSocket.GetStream();
                 int buffSize = 0;
-                byte[] inStream = new byte[65536];
+                byte[] inStream = new byte[ushort.MaxValue+1];
                 buffSize = clientSocket.ReceiveBufferSize;
                 serverStream.Read(inStream, 0, buffSize);
                 string returndata = System.Text.Encoding.ASCII.GetString(inStream);
