@@ -4,7 +4,7 @@ using System.Text;
 using System.Net.Sockets;
 using System.Threading;
 using Terminal.Gui;
-
+using System.Net;
 
 namespace chat_client
 {
@@ -12,13 +12,13 @@ namespace chat_client
     {
         TextField tfChatMessage, tfUserName;
         TextView tvChat;
-        Button btnConnect, btnSend;
+        Button btnConnect, btnDisconnect, btnSend;
         Window win;
         Label tfUserNameLabel;
+        Thread ctThread; 
 
-        TcpClient clientSocket = new TcpClient();
-        NetworkStream serverStream = default(NetworkStream);
-        string readData = null;
+        TcpClient clientSocket;
+        NetworkStream networkStream = default(NetworkStream);       
 
         public void Init()
         {
@@ -56,6 +56,14 @@ namespace chat_client
             };
             win.Add(btnConnect);
 
+            btnDisconnect = new Button("Disconnect from Server")
+            {
+                X = Pos.At(25),
+                Y = Pos.At(3),
+                Clicked = btnDisconnectClicked
+            };
+            win.Add(btnDisconnect);
+
             tvChat = new TextView()
             {
                 X = Pos.At(1),
@@ -78,51 +86,79 @@ namespace chat_client
                 Y = Pos.At(20),            
                 Clicked = btnSendClicked
             };
-            win.Add(btnSend);          
+            win.Add(btnSend);     
 
             Application.Run();
+        }
+
+        public MainWindow()
+        {   
         }
 
         private void btnSendClicked()
         {
             byte[] outStream = Encoding.ASCII.GetBytes(tfChatMessage.Text.ToString() + "$");
-            serverStream.Write(outStream, 0, outStream.Length);
-            serverStream.Flush();
+            networkStream.Write(outStream, 0, outStream.Length);
+            networkStream.Flush();
         }
 
         private void btnConnectClicked()
         {
-            readData = "Conected to Chat Server ...";
-            msg();
+            clientSocket = new TcpClient()
+            {
+                ReceiveBufferSize = 1024
+            };
+
             clientSocket.Connect("127.0.0.1", 8888);
-            serverStream = clientSocket.GetStream();
+            PrintMessage("Conected to Chat Server ...");      
+            networkStream = clientSocket.GetStream();
 
             byte[] outStream = Encoding.ASCII.GetBytes(tfUserName.Text.ToString() + "$");
-            serverStream.Write(outStream, 0, outStream.Length);
-            serverStream.Flush();
+            networkStream.Write(outStream, 0, outStream.Length);
+            networkStream.Flush();
 
-            Thread ctThread = new Thread(getMessage);
+            ctThread = new Thread(getMessage);
             ctThread.Start();
         }
 
-        private void getMessage()
-        {
-            while (true)
-            {
-                serverStream = clientSocket.GetStream();
-                int buffSize = 0;
-                byte[] inStream = new byte[ushort.MaxValue+1];
-                buffSize = clientSocket.ReceiveBufferSize;
-                serverStream.Read(inStream, 0, buffSize);
-                string returndata = System.Text.Encoding.ASCII.GetString(inStream);
-                readData = "" + returndata;
-                msg();
-            }
+        private void btnDisconnectClicked()
+        { 
+            clientSocket.Close(); 
         }
 
-        private void msg()
+
+        private void getMessage()
+        {
+            var bufferSize = clientSocket.ReceiveBufferSize;
+
+            try
+            {
+                while (true)
+                {
+                    byte[] inStream = new byte[bufferSize];
+                    networkStream.Read(inStream, 0, bufferSize);
+                    var message = Encoding.ASCII.GetString(inStream);
+                    //message = "" + returndata;
+                    PrintMessage(message);
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+                ClearMessages();
+                PrintMessage("Disconnected from Chat Server ...");
+            }         
+        }
+
+        private void PrintMessage(string message)
         {          
-            tvChat.Text = tvChat.Text + Environment.NewLine + " >> " + readData;
+            tvChat.Text = tvChat.Text + Environment.NewLine + " >> " + message;
+        }
+
+
+        private void ClearMessages()
+        {
+            tvChat.Text = "";
         }
     }
 }

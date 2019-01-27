@@ -15,14 +15,15 @@ namespace chat_server
         }
     }
 
-    public delegate void BroadcastEvent(object source, BroadcastMessageArgs e);
+    public delegate void MessageEvent(object source, MessageArgs e);
+    public delegate void DisconnectEvent(object source, EventArgs e);
 
-    public class BroadcastMessageArgs : EventArgs
+    public class MessageArgs : EventArgs
     {
         public string Message, UserName;
         public bool ShowName;
 
-        public BroadcastMessageArgs(string message, string userName, bool showName)
+        public MessageArgs(string message, string userName, bool showName)
         {
             Message = message;
             UserName = userName;
@@ -54,41 +55,57 @@ namespace chat_server
                 clientSocket = serverSocket.AcceptTcpClient();
                 clientSocket.ReceiveBufferSize = bufferSize;            
 
-                byte[] clientBytes = new byte[clientSocket.ReceiveBufferSize];
+                byte[] incomingByteStream = new byte[clientSocket.ReceiveBufferSize];
                 clientName = string.Empty;
 
                 // provides methods for sending and receiving data over Stream sockets in blocking mode
                 var networkStream = clientSocket.GetStream();
                 // The size of the receive buffer, in bytes. The default value is 8192 bytes.
-                networkStream.Read(clientBytes, 0, clientSocket.ReceiveBufferSize);
+                networkStream.Read(incomingByteStream, 0, clientSocket.ReceiveBufferSize);
                 // Received Bytes -> Ascii
-                clientName = Encoding.ASCII.GetString(clientBytes);
+                clientName = Encoding.ASCII.GetString(incomingByteStream);
                 // Clip String
-                clientName = clientName.Substring(0, clientName.IndexOf("$"));
-
+                clientName = clientName.Substring(0, clientName.IndexOf("$"));              
+               
                 clients.Add(clientName, clientSocket);
-                // Send nameClient to everybody
-                BroadcastMesssage(clientName + " Joined ", clientName, false);
-
-                Console.WriteLine(clientName + " Joined chat room ");
+                // Send nameClient to everybody  
+                var message = clientName + " joined chat room";
+                BroadcastMesssage(message);
+                Console.WriteLine(message);
 
                 var clientHandler = new ClientHandler(clientSocket, clientName, bufferSize);
-                clientHandler.Broadcast += BroadcastEventHandler;
+                clientHandler.Message += MessageEventHandler;
+                clientHandler.Disconnect += DisconnectEventHandler;
                 clientHandler.StartListen();
             }
 
             clientSocket.Close();
-            serverSocket.Stop();
-            Console.WriteLine("exit");
-            Console.ReadLine();
+            serverSocket.Stop();            
         }
 
-        private void BroadcastEventHandler(object source, BroadcastMessageArgs e)
+        private void DisconnectEventHandler(object source, EventArgs e)
+        {
+            ClientHandler handler = source as ClientHandler;
+            var clientName = handler.clientName;
+            if (clients.Contains(clientName))
+            {
+                clients.Remove(clientName);
+            }
+            // Send nameClient to everybody
+            var message = clientName + " left chat room";
+            BroadcastMesssage(message);
+            Console.WriteLine(message);
+
+            handler.Message -= MessageEventHandler;
+            handler.Disconnect -= DisconnectEventHandler;
+        }
+
+        private void MessageEventHandler(object source, MessageArgs e)
         {
             BroadcastMesssage(e.Message, e.UserName, e.ShowName);
-        }
+        }     
 
-        private void BroadcastMesssage(string msg, string uName, bool flag)
+        private void BroadcastMesssage(string msg, string uName = "", bool flag = false)
         {
             foreach (DictionaryEntry Item in clients)
             {
@@ -115,39 +132,40 @@ namespace chat_server
     public class ClientHandler
     {
         private readonly TcpClient clientSocket;
-        private readonly string clientName;
-        private readonly Thread clientThread;
+        public readonly string clientName;
+        private readonly Thread clientHandlerThread;
         private readonly int bufferSize; 
 
-        public event BroadcastEvent Broadcast;
+        public event MessageEvent Message;
+        public event DisconnectEvent Disconnect;
 
         public ClientHandler(TcpClient inClientSocket, string inClientName, int inBufferSize)
         {
             clientSocket = inClientSocket;
             clientName = inClientName;
             bufferSize = inBufferSize;
-            clientThread = new Thread(DoChat);         
+            clientHandlerThread = new Thread(ListenToClient);         
         }
 
         public void StartListen()
         {
-            clientThread.Start();
+            clientHandlerThread.Start();
         }
 
         public void StopListen()
         { 
-            clientThread.Abort();
+            clientHandlerThread.Abort();
         }
 
-        private void DoChat()
+        private void ListenToClient()
         {          
             byte[] bytesClient = new byte[bufferSize];
-            string textClient;           
-
-            while (true)
+            string textClient;  
+           
+            try
             {
-                try
-                {                 
+                while (true)
+                {
                     // provides methods for sending and receiving data over Stream sockets in blocking mode
                     // This Thread listenes just for this Client on this socket
                     var networkStream = clientSocket.GetStream();
@@ -159,16 +177,20 @@ namespace chat_server
                     Console.WriteLine("From client - " + clientName + " : " + textClient);
 
                     // Send textClient to everybody
-                    if (Broadcast != null)
+                    if (Message != null)
                     {
-                        Broadcast.Invoke(this, new BroadcastMessageArgs(textClient, clientName, true));
-                    }                   
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex.ToString());
+                        Message.Invoke(this, new MessageArgs(textClient, clientName, true));
+                    }
                 }
             }
+            catch (Exception ex)
+            {
+                if (Disconnect != null)
+                {
+                    Disconnect.Invoke(this, new EventArgs());
+                }
+                Console.WriteLine(ex.ToString());
+            }            
         }     
     }   
 }
