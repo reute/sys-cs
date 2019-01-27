@@ -15,7 +15,20 @@ namespace chat_server
         }
     }
 
-    public delegate void BroadcastDelegate(string msg, string uName, bool flag);
+    public delegate void BroadcastEvent(object source, BroadcastMessageArgs e);
+
+    public class BroadcastMessageArgs : EventArgs
+    {
+        public string Message, UserName;
+        public bool ShowName;
+
+        public BroadcastMessageArgs(string message, string userName, bool showName)
+        {
+            Message = message;
+            UserName = userName;
+            ShowName = showName;
+        }
+    }
 
     public class Server
     {
@@ -32,8 +45,7 @@ namespace chat_server
             // listen for and accept incoming connection requests in blocking synchronous mode.
             var serverSocket = new TcpListener(IPAddress.Loopback, 8888);
             serverSocket.Start();
-            Console.WriteLine("Chat Server Started ....");
-            BroadcastDelegate broadcastDelegate = BroadcastMesssage;
+            Console.WriteLine("Chat Server Started ....");            
 
             while (true)
             {
@@ -60,7 +72,8 @@ namespace chat_server
 
                 Console.WriteLine(clientName + " Joined chat room ");
 
-                var clientHandler = new ClientHandler(clientSocket, clientName, bufferSize, broadcastDelegate);
+                var clientHandler = new ClientHandler(clientSocket, clientName, bufferSize);
+                clientHandler.Broadcast += BroadcastEventHandler;
                 clientHandler.StartListen();
             }
 
@@ -68,6 +81,11 @@ namespace chat_server
             serverSocket.Stop();
             Console.WriteLine("exit");
             Console.ReadLine();
+        }
+
+        private void BroadcastEventHandler(object source, BroadcastMessageArgs e)
+        {
+            BroadcastMesssage(e.Message, e.UserName, e.ShowName);
         }
 
         private void BroadcastMesssage(string msg, string uName, bool flag)
@@ -99,16 +117,16 @@ namespace chat_server
         private readonly TcpClient clientSocket;
         private readonly string clientName;
         private readonly Thread clientThread;
-        private readonly int bufferSize;
-        private readonly BroadcastDelegate broadcastDelegate;
+        private readonly int bufferSize; 
 
-        public ClientHandler(TcpClient inClientSocket, string inClientName, int inBufferSize, BroadcastDelegate inBroadcastDelegate)
+        public event BroadcastEvent Broadcast;
+
+        public ClientHandler(TcpClient inClientSocket, string inClientName, int inBufferSize)
         {
             clientSocket = inClientSocket;
             clientName = inClientName;
             bufferSize = inBufferSize;
-            clientThread = new Thread(DoChat);
-            broadcastDelegate = inBroadcastDelegate;
+            clientThread = new Thread(DoChat);         
         }
 
         public void StartListen()
@@ -141,7 +159,10 @@ namespace chat_server
                     Console.WriteLine("From client - " + clientName + " : " + textClient);
 
                     // Send textClient to everybody
-                    broadcastDelegate(textClient, clientName, true);
+                    if (Broadcast != null)
+                    {
+                        Broadcast.Invoke(this, new BroadcastMessageArgs(textClient, clientName, true));
+                    }                   
                 }
                 catch (Exception ex)
                 {
@@ -149,5 +170,5 @@ namespace chat_server
                 }
             }
         }     
-    }
+    }   
 }
