@@ -7,11 +7,23 @@ using System.Net;
 
 namespace chat_server
 {
-    static class Program
+    class Program
     {
-        public static Hashtable clientsList = new Hashtable();
-
         static void Main(string[] args)
+        {
+            new Server().Start();
+        }
+    }
+
+    public delegate void BroadcastDelegate(string msg, string uName, bool flag);
+
+    public class Server
+    {
+        const int bufferSize = 1024;
+
+        private Hashtable clients = new Hashtable();       
+
+        public void Start()
         {
             TcpClient clientSocket;
             string clientName;
@@ -21,14 +33,16 @@ namespace chat_server
             var serverSocket = new TcpListener(IPAddress.Loopback, 8888);
             serverSocket.Start();
             Console.WriteLine("Chat Server Started ....");
-          
+            BroadcastDelegate broadcastDelegate = BroadcastMesssage;
+
             while (true)
             {
                 counter += 1;
                 // blocking method that returns a TcpClient that you can use to send and receive data
                 clientSocket = serverSocket.AcceptTcpClient();
+                clientSocket.ReceiveBufferSize = bufferSize;            
 
-                byte[] clientBytes = new byte[ushort.MaxValue+1];
+                byte[] clientBytes = new byte[clientSocket.ReceiveBufferSize];
                 clientName = string.Empty;
 
                 // provides methods for sending and receiving data over Stream sockets in blocking mode
@@ -40,14 +54,14 @@ namespace chat_server
                 // Clip String
                 clientName = clientName.Substring(0, clientName.IndexOf("$"));
 
-                clientsList.Add(clientName, clientSocket);
+                clients.Add(clientName, clientSocket);
                 // Send nameClient to everybody
-                broadcast(clientName + " Joined ", clientName, false);
+                BroadcastMesssage(clientName + " Joined ", clientName, false);
 
                 Console.WriteLine(clientName + " Joined chat room ");
 
-                var client = new HandleClient();
-                client.startClient(clientSocket, clientName);
+                var clientHandler = new ClientHandler(clientSocket, clientName, bufferSize, broadcastDelegate);
+                clientHandler.StartListen();
             }
 
             clientSocket.Close();
@@ -56,9 +70,9 @@ namespace chat_server
             Console.ReadLine();
         }
 
-        public static void broadcast(string msg, string uName, bool flag)
+        private void BroadcastMesssage(string msg, string uName, bool flag)
         {
-            foreach (DictionaryEntry Item in clientsList)
+            foreach (DictionaryEntry Item in clients)
             {
                 TcpClient broadcastSocket;
                 broadcastSocket = (TcpClient)Item.Value;
@@ -77,51 +91,57 @@ namespace chat_server
                 broadcastStream.Write(broadcastBytes, 0, broadcastBytes.Length);
                 broadcastStream.Flush();
             }
-        } 
+        }
     }
 
-    public class HandleClient
+    public class ClientHandler
     {
-        TcpClient clientSocket;
-        string clientName;
-        //Hashtable clientsList;
+        private readonly TcpClient clientSocket;
+        private readonly string clientName;
+        private readonly Thread clientThread;
+        private readonly int bufferSize;
+        private readonly BroadcastDelegate broadcastDelegate;
 
-        // 
-        public void startClient(TcpClient inClientSocket, string inClientName)
+        public ClientHandler(TcpClient inClientSocket, string inClientName, int inBufferSize, BroadcastDelegate inBroadcastDelegate)
         {
             clientSocket = inClientSocket;
             clientName = inClientName;
-            //clientsList = cList;
-            Thread clientThread = new Thread(doChat);
+            bufferSize = inBufferSize;
+            clientThread = new Thread(DoChat);
+            broadcastDelegate = inBroadcastDelegate;
+        }
+
+        public void StartListen()
+        {
             clientThread.Start();
         }
 
-        private void doChat()
-        {
-            //int requestCount = 0;
-            byte[] bytesClient = new byte[ushort.MaxValue+1];
-            string textClient;
-            //Byte[] sendBytes = null;
-            //string serverResponse = null;
-            //string rCount;
-            //requestCount = 0;
+        public void StopListen()
+        { 
+            clientThread.Abort();
+        }
+
+        private void DoChat()
+        {          
+            byte[] bytesClient = new byte[bufferSize];
+            string textClient;           
 
             while (true)
             {
                 try
-                {
-                    //requestCount = requestCount + 1;
+                {                 
                     // provides methods for sending and receiving data over Stream sockets in blocking mode
-                    // This Thread listenes jsut for this Client on this socket
+                    // This Thread listenes just for this Client on this socket
                     var networkStream = clientSocket.GetStream();
+                    clientSocket.ReceiveBufferSize = 512;
                     // if data arrives from client, store in bytesClient
                     networkStream.Read(bytesClient, 0, clientSocket.ReceiveBufferSize);
                     textClient = Encoding.ASCII.GetString(bytesClient);
                     textClient = textClient.Substring(0, textClient.IndexOf("$"));
                     Console.WriteLine("From client - " + clientName + " : " + textClient);
-                    //rCount = Convert.ToString(requestCount);
+
                     // Send textClient to everybody
-                    Program.broadcast(textClient, clientName, true);
+                    broadcastDelegate(textClient, clientName, true);
                 }
                 catch (Exception ex)
                 {
