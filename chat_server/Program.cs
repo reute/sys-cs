@@ -40,9 +40,7 @@ namespace chat_server
         public void Start()
         {
             TcpClient clientSocket;
-            string clientName;
-            // numberClients
-            int counter = 0;
+            string clientName;       
             // listen for and accept incoming connection requests in blocking synchronous mode.
             var serverSocket = new TcpListener(IPAddress.Loopback, 8888);
             serverSocket.Start();
@@ -50,7 +48,7 @@ namespace chat_server
 
             while (true)
             {
-                counter += 1;
+              
                 // blocking method that returns a TcpClient that you can use to send and receive data
                 clientSocket = serverSocket.AcceptTcpClient();
                 clientSocket.ReceiveBufferSize = bufferSize;            
@@ -65,8 +63,13 @@ namespace chat_server
                 // Received Bytes -> Ascii
                 clientName = Encoding.ASCII.GetString(incomingByteStream);
                 // Clip String
-                clientName = clientName.Substring(0, clientName.IndexOf("$"));              
-               
+                clientName = clientName.Substring(0, clientName.IndexOf("$"));
+
+                if (clients.Contains(clientName))
+                {
+                    continue;
+                }               
+             
                 clients.Add(clientName, clientSocket);
                 // Send nameClient to everybody  
                 var message = clientName + " joined chat room";

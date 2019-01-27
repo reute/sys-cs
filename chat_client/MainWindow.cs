@@ -122,7 +122,9 @@ namespace chat_client
         }
 
         private void btnDisconnectClicked()
-        { 
+        {
+            // TODO: closing thread gracefully
+            // TODO: sending disconnect message to server
             clientSocket.Close(); 
         }
 
