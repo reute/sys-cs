@@ -127,7 +127,6 @@ namespace chat_client
             clientSocket.Close(); 
         }
 
-
         private void getMessage()
         {
             var bufferSize = clientSocket.ReceiveBufferSize;
