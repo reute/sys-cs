@@ -160,5 +160,6 @@ namespace chat_client
         {
             tvChat.Text = "";
         }
+        
     }
 }
