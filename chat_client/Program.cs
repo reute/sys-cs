@@ -7,6 +7,7 @@ namespace chat_client
         static void Main(string[] args)
         {
             new MainWindow().Init();
+            
         } 
     }
 }
