@@ -82,8 +82,8 @@ namespace chat_server
                 clientHandler.StartListen();
             }
 
-            clientSocket.Close();
-            serverSocket.Stop();            
+            //clientSocket.Close();
+            //serverSocket.Stop();            
         }
 
         private void DisconnectEventHandler(object source, EventArgs e)

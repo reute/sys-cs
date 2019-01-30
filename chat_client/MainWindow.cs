@@ -16,7 +16,6 @@ namespace chat_client
         Window win;
         Label tfUserNameLabel;
         Thread ctThread; 
-
         TcpClient clientSocket;
         NetworkStream networkStream = default(NetworkStream);       
 
