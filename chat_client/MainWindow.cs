@@ -91,8 +91,7 @@ namespace chat_client
         }
 
         public MainWindow()
-        {   
-        }
+        {}
 
         private void btnSendClicked()
         {

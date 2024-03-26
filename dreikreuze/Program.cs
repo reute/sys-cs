@@ -19,6 +19,7 @@ namespace dreikreuze
             Environment.Exit(1);
         }
     }
+    
 
     public interface IPlayer
     {      
